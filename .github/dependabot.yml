@@ -1,0 +1,12 @@
+# Security updates only: open-pull-requests-limit: 0 disables version-update
+# pull requests. Pull requests for security alerts (Dependabot security updates
+# or an auto-triage rule, see README) have their own limit and still work.
+# Actions are referenced by major tag, so fixes within a major version arrive
+# without a pull request.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0

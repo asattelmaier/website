@@ -6,29 +6,35 @@ on:
   pull_request:
     branches: [ master ]
 
+permissions:
+  contents: read
+
+env:
+  GHC_VERSION: '9.14.1'
+  CABAL_VERSION: '3.18.2.0'
+
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: haskell/actions/setup@v1
+      - uses: actions/checkout@v7
         with:
-          ghc-version: '9.4.4'
-          cabal-version: '3.6.2.0'
+          persist-credentials: false
+      - uses: haskell-actions/setup@v2
+        id: setup
+        with:
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
 
       - name: Cache
-        uses: actions/cache@v1
-        env:
-          cache-name: cache-cabal
+        uses: actions/cache@v6
         with:
-          path: ~/.cabal
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/cabal.project') }}
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ runner.os }}-ghc-${{ env.GHC_VERSION }}-${{ hashFiles('**/*.cabal', 'cabal.project.freeze') }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-            ${{ runner.os }}-build-
-            ${{ runner.os }}-
+            ${{ runner.os }}-ghc-${{ env.GHC_VERSION }}-
 
       - name: Install dependencies
         run: |
@@ -37,22 +43,24 @@ jobs:
       - name: Build
         run: cabal build --enable-benchmarks all
       - name: Archive build artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifact
           path: dist-newstyle
 
   test:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download build artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v8
         with:
           name: build-artifact
           path: dist-newstyle
@@ -63,27 +71,30 @@ jobs:
 
   pushToDockerHub:
 
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
     needs: test
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download build artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v8
         with:
           name: build-artifact
           path: dist-newstyle
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -98,33 +109,37 @@ jobs:
 
   pushToGoogleCloud:
 
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
     needs: test
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download build artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v8
         with:
           name: build-artifact
           path: dist-newstyle
 
-      - name: Login to GCR
-        env:
-          PROJECT_ID: ${{ secrets.GCLOUD_PROJECT_ID }}
-        uses: google-github-actions/setup-gcloud@v0.3.0
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
         with:
-          service_account_key: ${{ secrets.GCLOUD_SA_KEY }}
-          project_id: ${{ env.GCLOUD_PROJECT_ID }}
-          export_default_credentials: true
+          credentials_json: ${{ secrets.GCLOUD_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ secrets.GCLOUD_PROJECT_ID }}
 
       - name: Configure Docker Client
         run: |-
           gcloud auth configure-docker --quiet
 
-      - uses: docker/build-push-action@v4
+      - uses: docker/build-push-action@v7
         env:
           GCLOUD_PROJECT_ID: ${{ secrets.GCLOUD_PROJECT_ID }}
           IMAGE_NAME: website
@@ -138,21 +153,25 @@ jobs:
 
   deployToGoogleCloud:
 
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
     needs: pushToGoogleCloud
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Login to GCR
-        env:
-          PROJECT_ID: ${{ secrets.GCLOUD_PROJECT_ID }}
-        uses: google-github-actions/setup-gcloud@v0.3.0
+        uses: actions/checkout@v7
         with:
-          service_account_key: ${{ secrets.GCLOUD_SA_KEY }}
-          project_id: ${{ env.GCLOUD_PROJECT_ID }}
-          export_default_credentials: true
+          persist-credentials: false
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCLOUD_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ secrets.GCLOUD_PROJECT_ID }}
 
       - name: Deploy Revision
         env:
