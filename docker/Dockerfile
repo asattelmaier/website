@@ -1,4 +1,5 @@
-FROM ubuntu:22.04@sha256:6120be6a2b7ce665d0cbddc3ce6eae60fe94637c6a66985312d1f02f63cc0bcd
+# Not pinned to a digest on purpose: every build uses the currently patched ubuntu:24.04, like the CI runner.
+FROM ubuntu:24.04
 
 
 
